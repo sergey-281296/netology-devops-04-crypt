@@ -24,71 +24,94 @@
 
 ### Задание 1
 
-**Цель:** Установить eCryptfs, добавить пользователя cryptouser и зашифровать его домашний каталог.
+1. Установка eCryptfs и создание пользователя cryptouser:
 
-**Выполнение в WSL2:**
-1. Установлены пакеты: `ecryptfs-utils` и `cryptsetup`
-2. Создан пользователь: `cryptouser` с UID 1001
-3. Обнаружено ограничение WSL2: модуль ядра `ecryptfs` отсутствует
+     * Установлены пакеты: `ecryptfs-utils` и `cryptsetup`
+     * Создан пользователь: `cryptouser` с UID 1001
+     * Обнаружено ограничение WSL2: модуль ядра `ecryptfs` отсутствует
+       - Команда `sudo modprobe ecryptfs` возвращает ошибку: `Module ecryptfs not found in directory /lib/modules/6.6.87.2-microsoft-standard-WSL2`
+       - Проверка `uname -a` показывает: `Linux LAPTOP-LI6B3PI4 6.6.87.2-microsoft-standard-WSL2`
 
-**Команды которые были выполнены:**
+  2. **Что должно было быть выполнено дальше (если бы работало в полноценном Linux):**
+
 ```bash
-sudo apt install ecryptfs-utils cryptsetup -y
-sudo adduser cryptouser
-sudo modprobe ecryptfs  # ошибка в WSL2
-dpkg -l | grep ecryptfs
-uname -a
-id cryptouser
-ls -la /home/
-
-
-**Что должно было быть выполнено дальше (если бы работало в полноценном Linux):**
-
-# Шифрование домашнего каталога пользователя
+# 1. Шифрование домашнего каталога пользователя
 sudo ecryptfs-migrate-home -u cryptouser
 
-# Выход из системы и вход под cryptouser для проверки
+# 2. Ввод парольной фразы для eCryptfs (дважды)
+# Будет запрошена passphrase для шифрования файлов
+
+# 3. Выход из системы и вход под cryptouser для проверки
+# (Нужно выйти из текущей сессии)
 logout
+
+# 4. Вход под пользователем cryptouser
 su - cryptouser
+# Ввести пароль пользователя cryptouser
 
-# Проверка зашифрованных данных
+# 5. Проверка зашифрованных данных
 ls -la ~/
+# Должны появиться файлы: Access-Your-Private-Data.desktop и README.txt
 
-# Проверка монтирования зашифрованного каталога
+# 6. Проверка монтирования зашифрованного каталога
 mount | grep ecryptfs
+# Должно показать монтирование ecryptfs
 
-# Удаление незашифрованной копии
+# 7. После успешной проверки удаление незашифрованной копии
 sudo rm -rf /home/.ecryptfs/cryptouser
 
-**Скриншоты выполнения:**
+  2. Скриншоты выполнения:
 
-https://img/1_install_packages.png
-https://img/1_create_user.png
-https://img/1_all_checks.png
+![Скриншот](img/1_install_packages.png)
+![Скриншот](img/1_create_user.png)
+![Скриншот](img/1_all_checks.png)
+
+---
 
 ### Задание 2
 
-Цель: Установить поддержку LUKS, создать зашифрованный раздел (контейнер).
+  1. Установка поддержки LUKS и создание зашифрованного контейнера:
 
-Выполнение:
+     * Установлен пакет: `cryptsetup` (уже установлен в задании 1)
+     * Создан файл-контейнер: `luks_container.img` размером 100 Мб
+     * Привязан к loop-устройству: `/dev/loop0`
+     * Зашифрован с использованием LUKS с паролем
+     * Создана файловая система: ext4 на зашифрованном устройстве
+     * Протестирована запись и чтение файлов
+     * Контейнер демонтирован и закрыт
 
-Установлен пакет: cryptsetup (уже установлен в задании 1)
+  2. Скриншоты выполнения:
 
-Создан файл-контейнер: luks_container.img размером 100 Мб
+![Установка cryptsetup](img/2_install_cryptsetup.png)
+![Создание файла-контейнера 100 Мб](img/2_create_container.png)
+![Привязка к loop-устройству](img/2_losetup.png)
+![Форматирование контейнера в LUKS](img/2_luks_format.png)
 
-Привязан к loop-устройству: /dev/loop0
+  3. Выполненные команды:
 
-Зашифрован с использованием LUKS с паролем
+```bash
+# Создание контейнера
+dd if=/dev/zero of=luks_container.img bs=1M count=100
 
-Создана файловая система: ext4 на зашифрованном устройстве
+# Привязка к loop-устройству
+sudo losetup -fP luks_container.img
 
-Протестирована запись и чтение файлов
+# Шифрование LUKS
+sudo cryptsetup luksFormat /dev/loop0
 
-Контейнер демонтирован и закрыт
+# Открытие контейнера
+sudo cryptsetup open /dev/loop0 myencrypted
 
-Скриншоты выполнения:
-https://img/2_install_cryptsetup.png
-https://img/2_create_container.png
-https://img/2_losetup.png
-https://img/2_luks_format.png
+# Создание файловой системы
+sudo mkfs.ext4 /dev/mapper/myencrypted
 
+# Монтирование и тестирование
+mkdir test_mount
+sudo mount /dev/mapper/myencrypted test_mount
+echo "Test file in LUKS" | sudo tee test_mount/test.txt
+
+# Демонтирование и очистка
+sudo umount test_mount
+sudo cryptsetup close myencrypted
+sudo losetup -d /dev/loop0
+rmdir test_mount
